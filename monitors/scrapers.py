@@ -1,148 +1,181 @@
 """
-增强版数据抓取模块 - 优化版
-使用更稳定的方法抓取Polymarket和Wunderground数据
+增强版数据抓取模块 - API版本
+使用XTracker API和Polymarket API获取准确数据
 """
 
 import requests
-from bs4 import BeautifulSoup
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import time
 
-class PolymarketScraper:
-    """Polymarket 数据抓取"""
+class XTrackerAPI:
+    """XTracker API - 获取推文数据"""
     
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Cache-Control': 'no-cache'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Origin': 'https://xtracker.polymarket.com',
+            'Referer': 'https://xtracker.polymarket.com/'
         })
+        # 已知的period_id映射
+        self.period_ids = {
+            'july-31-august-7': 'e5d7a6b5-c5e5-4b7e-9f3a-5d6e7f8a9b0c',  # 示例ID，需要真实ID
+        }
     
-    def fetch_musk_market(self, url="https://polymarket.com/event/elon-musk-of-tweets-july-31-august-7"):
-        """抓取马斯克推文盘口"""
+    def get_tweet_count(self, period_name='july-31-august-7'):
+        """
+        获取推文数
+        XTracker没有公开API，我们通过解析页面获取
+        """
         try:
-            print(f"  → 请求: {url}")
+            print(f"  → 请求XTracker页面...")
+            url = "https://xtracker.polymarket.com/user/elonmusk"
+            
             response = self.session.get(url, timeout=30)
-            print(f"  → 状态码: {response.status_code}")
             
             if response.status_code != 200:
+                print(f"  ✗ XTracker请求失败: {response.status_code}")
                 return None
             
-            soup = BeautifulSoup(response.text, 'lxml')
+            # 从HTML中提取推文数
+            text = response.text
             
-            # 提取推文数 - 多种方法
-            tweets = 0
+            # 查找 "Elon Musk # tweets July 31 - August 7, 2026?" 后面的推文数
+            # 使用正则匹配
+            patterns = [
+                r'Elon Musk # tweets July 31 - August 7, 2026\?.*?(\d{2,4})\s+posts',
+                r'July 31, 2026.*?Aug 7, 2026.*?(\d{2,4})\s+posts',
+            ]
             
-            # 方法1: 查找包含数字的元素
-            all_text = soup.get_text()
+            for pattern in patterns:
+                match = re.search(pattern, text, re.DOTALL)
+                if match:
+                    tweets = int(match.group(1))
+                    print(f"  ✓ 推文数: {tweets}")
+                    return tweets
             
-            # 查找"TWEET COUNT"后面的数字
-            tweet_count_match = re.search(r'TWEET COUNT.*?(\d+)', all_text, re.DOTALL)
-            if tweet_count_match:
-                tweets = int(tweet_count_match.group(1))
-                print(f"  → 方法1成功: 推文数={tweets}")
+            # 如果正则失败，尝试从JavaScript数据中提取
+            # 查找 __NEXT_DATA__ 或类似的JSON数据
+            next_data_match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', text, re.DOTALL)
+            if next_data_match:
+                try:
+                    data = json.loads(next_data_match.group(1))
+                    # 遍历找到对应的period
+                    if 'props' in data and 'pageProps' in data['props']:
+                        periods = data['props']['pageProps'].get('periods', [])
+                        for period in periods:
+                            if 'July 31' in period.get('name', '') and 'August 7' in period.get('name', ''):
+                                tweets = period.get('postCount', 0)
+                                print(f"  ✓ 推文数(从JSON): {tweets}")
+                                return tweets
+                except:
+                    pass
             
-            # 方法2: 查找大数字（80-500之间）
-            if tweets == 0:
-                numbers = re.findall(r'\b(\d{2,3})\b', all_text)
-                for num_str in numbers:
-                    num = int(num_str)
-                    if 80 <= num <= 500:
-                        tweets = num
-                        print(f"  → 方法2成功: 推文数={tweets}")
-                        break
-            
-            # 提取价格分布
-            prices = {}
-            
-            # 查找所有包含区间和概率的文本
-            # 模式: "180-199" 和 "26%"
-            text_content = soup.get_text()
-            
-            # 查找所有区间
-            ranges = re.findall(r'(\d{3}-\d{3})', text_content)
-            
-            # 对于每个区间，查找附近概率
-            for i, range_val in enumerate(ranges):
-                # 查找该区间在文本中的位置
-                pos = text_content.find(range_val)
-                if pos != -1:
-                    # 在该区间前后100个字符内查找概率
-                    start = max(0, pos - 50)
-                    end = min(len(text_content), pos + 100)
-                    nearby_text = text_content[start:end]
-                    
-                    # 查找概率
-                    prob_match = re.search(r'(\d+\.?\d*)\s*%', nearby_text)
-                    if prob_match:
-                        prob = prob_match.group(1)
-                        # 只保留第一个匹配的概率
-                        if range_val not in prices:
-                            prices[range_val] = prob
-            
-            print(f"  → 价格数据: {len(prices)}个区间")
-            
-            return {
-                "tweets": tweets,
-                "prices": prices,
-                "last_update": datetime.now().isoformat()
-            }
+            print(f"  ✗ 无法提取推文数")
+            return None
             
         except Exception as e:
-            print(f"  ✗ 抓取失败: {e}")
+            print(f"  ✗ XTracker错误: {e}")
             return None
+
+class PolymarketAPI:
+    """Polymarket API - 获取价格数据"""
     
-    def fetch_weather_market(self, city="shenzhen"):
-        """抓取天气盘口"""
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Origin': 'https://polymarket.com',
+            'Referer': 'https://polymarket.com/'
+        })
+        self.base_url = "https://clob.polymarket.com"
+    
+    def get_market_prices(self, condition_id=None, slug=None):
+        """
+        获取市场概率分布
+        
+        参数:
+        - condition_id: 市场条件ID
+        - slug: 市场slug（如 "elon-musk-of-tweets-july-31-august-7"）
+        """
         try:
-            # 深圳天气盘口URL - 需要找到正确的URL
-            url = f"https://polymarket.com/event/shenzhen-august-high-temperature"
-            print(f"  → 请求天气盘口: {url}")
+            print(f"  → 请求Polymarket API...")
             
+            # 方法1: 通过slug查询
+            if slug:
+                # 首先获取市场信息
+                markets_url = f"https://gamma-api.polymarket.com/markets?slug={slug}"
+                response = self.session.get(markets_url, timeout=30)
+                
+                if response.status_code == 200:
+                    markets = response.json()
+                    if markets and len(markets) > 0:
+                        # 获取市场数据
+                        market = markets[0]
+                        tokens = market.get('tokens', [])
+                        
+                        prices = {}
+                        for token in tokens:
+                            outcome = token.get('outcome', '')
+                            price = token.get('price', 0)
+                            # 转换为概率
+                            prob = float(price) * 100 if price else 0
+                            
+                            # 提取数字区间（如 "180-199"）
+                            range_match = re.search(r'(\d{3}-\d{3})', outcome)
+                            if range_match:
+                                range_val = range_match.group(1)
+                                prices[range_val] = f"{prob:.0f}" if prob >= 1 else f"<1"
+                        
+                        print(f"  ✓ 价格数据: {len(prices)}个区间")
+                        return prices, market
+            
+            # 方法2: 直接访问页面并解析
+            url = f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com/event/elon-musk-of-tweets-july-31-august-7"
             response = self.session.get(url, timeout=30)
             
-            if response.status_code == 404:
-                print(f"  ✗ 天气盘口URL不存在(404)")
-                return None
+            if response.status_code != 200:
+                print(f"  ✗ Polymarket请求失败: {response.status_code}")
+                return None, None
             
-            soup = BeautifulSoup(response.text, 'lxml')
+            text = response.text
             
-            # 提取温度概率
+            # 提取价格数据
             prices = {}
-            text_content = soup.get_text()
             
-            # 查找温度档位（如 "30°C"）
-            temps = re.findall(r'(\d+)°C', text_content)
+            # 查找所有价格区间和概率
+            # 格式: "180-199" 和 "31%"
+            range_pattern = r'(\d{3}-\d{3})'
+            prob_pattern = r'(\d+(?:\.\d+)?)\s*%'
             
-            for temp in temps:
-                # 查找该温度附近的概率
-                pos = text_content.find(f"{temp}°C")
+            # 查找所有区间
+            ranges = re.findall(range_pattern, text)
+            
+            # 对于每个区间，查找其附近的概率
+            for i, range_val in enumerate(ranges):
+                # 在文本中查找该区间的位置
+                pos = text.find(range_val)
                 if pos != -1:
-                    start = max(0, pos - 30)
-                    end = min(len(text_content), pos + 80)
-                    nearby_text = text_content[start:end]
+                    # 在该区间后面200个字符内查找概率
+                    nearby_text = text[pos:pos+200]
                     
-                    prob_match = re.search(r'(\d+\.?\d*)\s*%', nearby_text)
-                    if prob_match:
-                        prob = prob_match.group(1)
-                        prices[f"{temp}°C"] = prob
+                    # 查找概率
+                    prob_matches = re.findall(prob_pattern, nearby_text)
+                    if prob_matches:
+                        prob = prob_matches[0]
+                        prices[range_val] = prob
             
-            print(f"  → 温度数据: {len(prices)}个档位")
-            
-            return {
-                "prices": prices,
-                "last_update": datetime.now().isoformat()
-            }
+            print(f"  ✓ 价格数据: {len(prices)}个区间")
+            return prices, None
             
         except Exception as e:
-            print(f"  ✗ 天气盘口抓取失败: {e}")
-            return None
+            print(f"  ✗ Polymarket API错误: {e}")
+            return None, None
 
 class WundergroundScraper:
     """Wunderground 数据抓取"""
@@ -150,7 +183,7 @@ class WundergroundScraper:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         })
     
@@ -166,138 +199,127 @@ class WundergroundScraper:
             if response.status_code != 200:
                 return None
             
-            soup = BeautifulSoup(response.text, 'lxml')
-            text_content = soup.get_text()
+            text = response.text
             
             # 提取温度（华氏度）
             temp_f = None
             temp_c = None
             humidity = None
             
-            # 方法1: 查找 "°F"
-            fahrenheit_matches = re.findall(r'(\d+)\s*°F', text_content)
-            if fahrenheit_matches:
-                # 取第一个合理的温度值
-                for temp_str in fahrenheit_matches:
-                    temp = int(temp_str)
-                    if 60 <= temp <= 110:  # 合理的深圳温度范围（华氏度）
-                        temp_f = temp
-                        temp_c = round((temp_f - 32) * 5 / 9)
-                        print(f"  → 温度: {temp_f}°F = {temp_c}°C")
-                        break
+            # 方法1: 查找°F和°C
+            # WU通常显示: "85°F" 或 "29°C"
             
-            # 方法2: 如果没找到，查找摄氏度
+            # 查找华氏度
+            fahrenheit_match = re.search(r'(\d{2,3})\s*°F', text)
+            if fahrenheit_match:
+                temp_f = int(fahrenheit_match.group(1))
+                # 转换为摄氏度
+                temp_c = round((temp_f - 32) * 5 / 9)
+                print(f"  ✓ 温度: {temp_f}°F = {temp_c}°C")
+            
+            # 如果华氏度没找到，查找摄氏度
             if not temp_c:
-                celsius_matches = re.findall(r'(\d+)\s*°C', text_content)
-                if celsius_matches:
-                    for temp_str in celsius_matches:
-                        temp = int(temp_str)
-                        if 15 <= temp <= 45:  # 合理的深圳温度范围（摄氏度）
-                            temp_c = temp
-                            print(f"  → 温度: {temp_c}°C")
-                            break
+                celsius_match = re.search(r'(\d{2})\s*°C', text)
+                if celsius_match:
+                    temp_c = int(celsius_match.group(1))
+                    print(f"  ✓ 温度: {temp_c}°C")
             
             # 提取湿度
-            humidity_match = re.search(r'Humidity.*?(\d+)', text_content, re.DOTALL)
+            humidity_match = re.search(r'Humidity[^\d]*(\d+)', text, re.IGNORECASE)
             if humidity_match:
                 humidity = int(humidity_match.group(1))
-                print(f"  → 湿度: {humidity}%")
+                print(f"  ✓ 湿度: {humidity}%")
             
             return {
                 "temp_f": temp_f,
                 "temp_c": temp_c,
                 "humidity": humidity,
-                "last_update": datetime.now().isoformat()
+                "last_update": datetime.now().strftime("%H:%M:%S")
             }
             
         except Exception as e:
             print(f"  ✗ WU抓取失败: {e}")
             return None
 
-class TwitterScraper:
-    """推特数据抓取"""
+class WeatherMarketAPI:
+    """天气盘口API"""
     
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json'
         })
     
-    def fetch_latest_tweets(self, username="elonmusk"):
-        """获取最新推文"""
+    def fetch_weather_market(self, city="shenzhen", date="august"):
+        """获取天气盘口数据"""
         try:
-            # 使用Nitter镜像（更稳定）
-            mirrors = [
-                "https://nitter.net",
-                "https://nitter.poast.org",
-                "https://nitter.privacydev.net"
-            ]
+            # 搜索天气盘口
+            search_url = f"https://gamma-api.polymarket.com/markets?_s={city}+{date}+temperature"
+            print(f"  → 搜索天气盘口: {search_url}")
             
-            for mirror in mirrors:
-                try:
-                    url = f"{mirror}/{username}"
-                    print(f"  → 尝试Nitter镜像: {mirror}")
-                    
-                    response = self.session.get(url, timeout=10)
-                    
-                    if response.status_code == 200:
-                        soup = BeautifulSoup(response.text, 'lxml')
-                        
-                        tweets = []
-                        # 查找推文内容
-                        tweet_items = soup.find_all('div', class_='tweet-content', limit=3)
-                        
-                        for item in tweet_items:
-                            tweet_text = item.get_text(strip=True)[:200]
-                            
-                            # 提取时间
-                            time_elem = item.parent.find('span', class_='tweet-date')
-                            tweet_time = time_elem.get_text(strip=True) if time_elem else '刚刚'
-                            
-                            tweets.append({
-                                "text": tweet_text,
-                                "time": tweet_time,
-                                "link": f"https://x.com/{username}"
-                            })
-                        
-                        if tweets:
-                            print(f"  → 成功获取{len(tweets)}条推文")
-                            return {
-                                "tweets": tweets,
-                                "last_update": datetime.now().isoformat()
-                            }
-                except:
-                    continue
+            response = self.session.get(search_url, timeout=30)
             
-            print(f"  ✗ 所有Nitter镜像都失败")
-            return None
+            if response.status_code != 200:
+                print(f"  ✗ 天气盘口搜索失败: {response.status_code}")
+                return None
+            
+            markets = response.json()
+            
+            if not markets:
+                print(f"  ✗ 未找到天气盘口")
+                return None
+            
+            # 提取温度概率
+            prices = {}
+            for market in markets[:1]:  # 只取第一个匹配的
+                tokens = market.get('tokens', [])
+                for token in tokens:
+                    outcome = token.get('outcome', '')
+                    price = token.get('price', 0)
+                    
+                    # 提取温度
+                    temp_match = re.search(r'(\d+)\s*°C', outcome)
+                    if temp_match:
+                        temp = temp_match.group(1)
+                        prob = float(price) * 100 if price else 0
+                        prices[f"{temp}°C"] = f"{prob:.0f}" if prob >= 1 else f"<1"
+            
+            print(f"  ✓ 天气数据: {len(prices)}个档位")
+            return prices
             
         except Exception as e:
-            print(f"  ✗ 推文抓取失败: {e}")
+            print(f"  ✗ 天气盘口抓取失败: {e}")
             return None
 
 # 测试
 if __name__ == "__main__":
     print("=" * 60)
-    print("数据抓取测试")
+    print("数据抓取测试 - API版本")
     print("=" * 60)
     
-    pm = PolymarketScraper()
-    print("\n1. 测试Polymarket马斯克盘口:")
-    data = pm.fetch_musk_market()
-    if data:
-        print(f"  推文数: {data.get('tweets')}")
-        print(f"  价格区间: {len(data.get('prices', {}))}")
+    # 测试XTracker
+    print("\n1. 测试XTracker API:")
+    xtracker = XTrackerAPI()
+    tweets = xtracker.get_tweet_count()
+    print(f"  推文数: {tweets}")
     
-    print("\n2. 测试Wunderground温度:")
+    # 测试Polymarket
+    print("\n2. 测试Polymarket API:")
+    pm = PolymarketAPI()
+    prices, _ = pm.get_market_prices(slug="elon-musk-of-tweets-july-31-august-7")
+    print(f"  价格数据: {prices}")
+    
+    # 测试WU
+    print("\n3. 测试Wunderground:")
     wu = WundergroundScraper()
     temp = wu.fetch_shenzhen_temp()
     if temp:
         print(f"  温度: {temp.get('temp_c')}°C")
         print(f"  湿度: {temp.get('humidity')}%")
     
-    print("\n3. 测试推特抓取:")
-    twitter = TwitterScraper()
-    tweets = twitter.fetch_latest_tweets()
-    if tweets:
-        print(f"  推文数: {len(tweets.get('tweets', []))}")
+    # 测试天气盘口
+    print("\n4. 测试天气盘口:")
+    weather = WeatherMarketAPI()
+    weather_prices = weather.fetch_weather_market()
+    print(f"  天气数据: {weather_prices}")
