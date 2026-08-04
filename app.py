@@ -1,6 +1,6 @@
 """
-Polymarket 套利监控 Web App - 官方API版本
-使用Polymarket Gamma API和天气API获取准确数据
+Polymarket 套利监控 Web App - 直接抓取版本
+直接从XTracker和Polymarket页面抓取实时数据
 """
 
 from flask import Flask, render_template, jsonify
@@ -66,81 +66,116 @@ def save_data():
     except Exception as e:
         print(f"✗ 保存数据失败: {e}")
 
-def fetch_polymarket_market():
-    """使用Polymarket Gamma API获取市场数据"""
+def fetch_xtracker_real():
+    """直接从XTracker抓取实时推文数"""
     try:
-        print("  → 请求Polymarket Gamma API...")
+        print("  → 抓取XTracker实时数据...")
         
-        # Gamma API endpoint
-        url = "https://gamma-api.polymarket.com/markets"
-        
-        # 查询参数：搜索马斯克推文市场
-        params = {
-            "slug": "elon-musk-of-tweets-july-31-august-7"
-        }
-        
+        url = "https://xtracker.polymarket.com/user/elonmusk"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache'
         }
         
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
         
         if response.status_code == 200:
-            markets = response.json()
+            text = response.text
             
-            if markets and len(markets) > 0:
-                market = markets[0]
-                
-                # 提取价格数据
-                prices = {}
-                tokens = market.get('tokens', [])
-                
-                for token in tokens:
-                    outcome = token.get('outcome', '')
-                    price = token.get('price', 0)
-                    
-                    # 提取区间
-                    match = re.search(r'(\d{3}-\d{3})', outcome)
-                    if match:
-                        range_val = match.group(1)
-                        prob = float(price) * 100 if price else 0
-                        prices[range_val] = f"{prob:.0f}" if prob >= 1 else "<1"
-                
-                if prices:
-                    data["musk"]["prices"] = prices
-                    print(f"  ✓ 获取到{len(prices)}个价格区间")
-                
-                # 提取推文数（从市场描述中）
-                description = market.get('description', '')
-                
-                # 查找类似 "107 posts" 的文本
-                match = re.search(r'(\d{2,4})\s+posts', description, re.IGNORECASE)
-                if match:
-                    tweets = int(match.group(1))
-                    data["musk"]["tweets"] = tweets
-                    print(f"  ✓ 推文数: {tweets}")
-                
-                # 更新时间
-                data["musk"]["last_update"] = datetime.now().strftime("%H:%M:%S")
-                
-                return True
+            # 查找 "Elon Musk # tweets July 31 - August 7, 2026?" 对应的推文数
+            # 格式：先找这个标题，然后在其附近找推文数
+            
+            # 方法1：直接查找该period的推文数
+            # 在HTML中，这个period的结构是：
+            # <heading>Elon Musk # tweets July 31 - August 7, 2026?</heading>
+            # ...<数字> posts
+            
+            # 使用正则直接匹配
+            # 找到 July 31 - August 7 区间，然后找其后的数字+posts
+            
+            # 方法：查找所有包含 posts 的数字
+            posts_matches = re.findall(r'(\d{2,4})\s+posts', text)
+            
+            if posts_matches:
+                # 遍历所有匹配，找最大的合理值（应该是当前盘口的推文数）
+                for posts in reversed(posts_matches):
+                    num = int(posts)
+                    if 80 <= num <= 300:  # 合理范围
+                        data["musk"]["tweets"] = num
+                        print(f"  ✓ 推文数: {num}")
+                        return True
+            
+            print(f"  ✗ 未找到有效推文数")
+            return False
         else:
-            print(f"  ✗ API请求失败: {response.status_code}")
+            print(f"  ✗ XTracker请求失败: {response.status_code}")
             return False
             
     except Exception as e:
-        print(f"  ✗ Polymarket API错误: {e}")
+        print(f"  ✗ XTracker抓取错误: {e}")
         return False
 
-def fetch_weather_data():
-    """获取天气数据"""
+def fetch_polymarket_prices():
+    """从Polymarket页面抓取价格分布"""
     try:
-        print("  → 请求天气数据...")
+        print("  → 抓取Polymarket价格数据...")
         
-        # 使用免费的天气API（wttr.in）
+        url = "https://polymarket.com/event/elon-musk-of-tweets-july-31-august-7"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=20)
+        
+        if response.status_code == 200:
+            text = response.text
+            
+            # 提取价格数据
+            prices = {}
+            
+            # 查找所有区间（如 180-199）
+            ranges = re.findall(r'(\d{3}-\d{3})', text)
+            ranges = sorted(set(ranges), key=lambda x: int(x.split('-')[0]))
+            
+            # 对每个区间，查找其附近的概率
+            for range_val in ranges:
+                # 在文本中查找该区间
+                pos = text.find(range_val)
+                if pos != -1:
+                    # 在该区间后面200字符内查找概率
+                    nearby = text[pos:pos+200]
+                    prob_match = re.search(r'(\d+(?:\.\d+)?)\s*%', nearby)
+                    if prob_match:
+                        prob = prob_match.group(1)
+                        prices[range_val] = prob
+            
+            if prices:
+                data["musk"]["prices"] = prices
+                print(f"  ✓ 价格数据: {len(prices)}个区间")
+                return True
+            else:
+                print(f"  ✗ 未找到价格数据")
+                return False
+        else:
+            print(f"  ✗ Polymarket请求失败: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"  ✗ Polymarket抓取错误: {e}")
+        return False
+
+def fetch_weather_real():
+    """获取实时天气数据"""
+    try:
+        print("  → 抓取实时天气...")
+        
+        # 使用wttr.in
         url = "https://wttr.in/Shenzhen?format=j1"
-        
         headers = {
             'User-Agent': 'curl'
         }
@@ -150,7 +185,6 @@ def fetch_weather_data():
         if response.status_code == 200:
             weather_data = response.json()
             
-            # 提取当前温度
             current = weather_data.get('current_condition', [{}])[0]
             temp_c = int(current.get('temp_C', 0))
             humidity = int(current.get('humidity', 0))
@@ -160,25 +194,27 @@ def fetch_weather_data():
             data["weather"]["last_update"] = datetime.now().strftime("%H:%M:%S")
             
             print(f"  ✓ 温度: {temp_c}°C, 湿度: {humidity}%")
-            
             return True
         else:
-            print(f"  ✗ 天气API失败: {response.status_code}")
+            print(f"  ✗ 天气请求失败: {response.status_code}")
             return False
             
     except Exception as e:
-        print(f"  ✗ 天气数据错误: {e}")
+        print(f"  ✗ 天气抓取错误: {e}")
         return False
 
 def update_all_data():
     """更新所有数据"""
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 🔄 更新数据...")
     
-    # 获取Polymarket数据
-    fetch_polymarket_market()
+    # 获取XTracker实时推文数
+    fetch_xtracker_real()
+    
+    # 获取Polymarket价格分布
+    fetch_polymarket_prices()
     
     # 获取天气数据
-    fetch_weather_data()
+    fetch_weather_real()
     
     # 计算剩余时间
     end_time = datetime(2026, 8, 8, 0, 0, 0)
@@ -192,12 +228,19 @@ def update_all_data():
     else:
         data["musk"]["remaining"] = "已结束"
     
+    # 更新时间
+    data["musk"]["last_update"] = datetime.now().strftime("%H:%M:%S")
+    
     # 生成预测建议
     tweets = data["musk"].get("tweets", 0)
     if tweets > 0:
-        daily_rate = tweets / 5  # 假设已过5天
-        prediction = f"当前{tweets}条，日均{daily_rate:.0f}条"
-        data["musk"]["prediction"] = prediction
+        # 计算日均推文数（从7月31日到现在）
+        start_time = datetime(2026, 7, 31, 0, 0, 0)
+        days_passed = (now - start_time).days
+        if days_passed > 0:
+            daily_avg = tweets / days_passed
+            prediction = f"当前{tweets}条，日均{daily_avg:.1f}条"
+            data["musk"]["prediction"] = prediction
     
     # 保存数据
     save_data()
@@ -209,7 +252,7 @@ def background_monitor():
     print("=" * 60)
     print("🚀 Polymarket 套利监控 Web App 启动")
     print("📱 访问: https://polymarket-tracker-production-dd79.up.railway.app")
-    print("📊 数据源: Polymarket Gamma API + wttr.in")
+    print("📊 数据源: XTracker + Polymarket + wttr.in")
     print("🔄 更新频率: 每5分钟")
     print("=" * 60)
     
@@ -269,7 +312,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "time": datetime.now().isoformat(),
-        "data_source": "official_api"
+        "tweets": data["musk"].get("tweets", 0)
     })
 
 if __name__ == '__main__':
