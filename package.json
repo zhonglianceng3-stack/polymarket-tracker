@@ -1,0 +1,13 @@
+{
+  "name": "polymarket-tracker",
+  "version": "1.0.0",
+  "description": "Polymarket 套利监控 Web App",
+  "main": "app.py",
+  "scripts": {
+    "start": "python app.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhonglianceng3-stack/polymarket-tracker"
+  }
+}

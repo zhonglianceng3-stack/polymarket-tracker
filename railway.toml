@@ -1,0 +1,15 @@
+[project]
+name = "polymarket-tracker"
+version = "1.0.0"
+description = "Polymarket 套利监控 Web App"
+authors = ["Your Name"]
+requires-python = ">=3.9"
+
+[build]
+builder = "PYTHON"
+
+[deploy]
+startCommand = "python app.py"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"

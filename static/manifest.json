@@ -1,0 +1,16 @@
+{
+  "name": "Polymarket 套利监控",
+  "short_name": "Polymarket",
+  "description": "预测市场套利机会实时监控",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "/static/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
