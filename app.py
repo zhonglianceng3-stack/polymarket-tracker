@@ -177,6 +177,13 @@ def clear_alerts():
     save_data(d)
     return jsonify({"status": "ok"})
 
+@app.route('/api/reset', methods=['POST'])
+def reset_data():
+    """重置数据为新结构"""
+    new_data = get_default_data()
+    save_data(new_data)
+    return jsonify({"status": "ok", "message": "数据已重置"})
+
 def background_monitor():
     """后台监控线程"""
     while True:
