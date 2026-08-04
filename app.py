@@ -1,26 +1,45 @@
 #!/usr/bin/env python3
 """
-Polymarket 套利监控 Web App
+Polymarket 套利监控 Web App - 增强版
+支持实时数据更新和变化推送
 """
 
 from flask import Flask, render_template, jsonify
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import time
+import sys
+
+# 添加monitors目录到路径
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from monitors.scrapers import PolymarketScraper, WundergroundScraper
 
 app = Flask(__name__)
 
 # 数据存储
 DATA_FILE = "data.json"
+ALERTS_FILE = "alerts.json"
+
+# 初始化抓取器
+pm_scraper = PolymarketScraper()
+wu_scraper = WundergroundScraper()
 
 def load_data():
     """加载数据"""
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
     return get_default_data()
+
+def save_data(data):
+    """保存数据"""
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_default_data():
     """默认数据结构"""
@@ -29,135 +48,242 @@ def get_default_data():
         "musk": {
             "current": {
                 "name": "7月31日-8月7日",
-                "tweets": 96,
-                "time_left": "约4天",
-                "prices": {
-                    "80-99": "<1",
-                    "100-119": "<1",
-                    "120-139": "1",
-                    "140-159": "8",
-                    "160-179": "20",
-                    "180-199": "26",
-                    "200-219": "21",
-                    "220-239": "13",
-                    "240-259": "6",
-                    "260-279": "3",
-                    "280-299": "1",
-                    "300-319": "<1",
-                    "320-339": "<1",
-                    "340-359": "<1",
-                    "360-379": "<1",
-                    "380-399": "<1",
-                    "400-419": "<1"
-                },
-                "highlight": "180-199",
-                "prediction": "推文速度需26条/天达200条，建议关注160-199区间"
+                "tweets": 0,
+                "time_left": "计算中...",
+                "prices": {},
+                "prediction": "等待数据..."
             },
             "next": {
                 "name": "8月7日-8月14日",
                 "tweets": 0,
                 "time_left": "未开始",
-                "prices": {
-                    "100-119": "1",
-                    "120-139": "3",
-                    "140-159": "8",
-                    "160-179": "15",
-                    "180-199": "22",
-                    "200-219": "20",
-                    "220-239": "15",
-                    "240-259": "8",
-                    "260-279": "4",
-                    "280-299": "2"
-                },
-                "highlight": "180-199",
-                "prediction": "新盘口，等待数据"
+                "prices": {},
+                "prediction": "等待数据..."
             }
         },
         "weather": {
             "shenzhen": {
                 "today": {
-                    "current_temp": 28,
-                    "forecast_high": 31,
-                    "prices": {
-                        "26°C": "1",
-                        "27°C": "3",
-                        "28°C": "10",
-                        "29°C": "20",
-                        "30°C": "35",
-                        "31°C": "25",
-                        "32°C": "5",
-                        "33°C": "1"
-                    },
-                    "highlight": "30°C",
-                    "prediction": "⚠️ 套利机会！预报31°C但30°C概率仅35%，建议买入30-31°C"
-                },
-                "tomorrow": {
-                    "forecast_high": 32,
-                    "prices": {
-                        "27°C": "2",
-                        "28°C": "5",
-                        "29°C": "12",
-                        "30°C": "25",
-                        "31°C": "30",
-                        "32°C": "18",
-                        "33°C": "6",
-                        "34°C": "2"
-                    },
-                    "highlight": "31°C",
-                    "prediction": "预报32°C，31°C概率30%，可考虑买入"
-                }
-            },
-            "beijing": {
-                "today": {
-                    "current_temp": 30,
-                    "forecast_high": 34,
-                    "prices": {
-                        "30°C": "5",
-                        "31°C": "10",
-                        "32°C": "18",
-                        "33°C": "30",
-                        "34°C": "25",
-                        "35°C": "10",
-                        "36°C": "2"
-                    },
-                    "highlight": "33°C",
-                    "prediction": "预报34°C，33-34°C概率较高"
-                }
-            },
-            "shanghai": {
-                "today": {
-                    "current_temp": 29,
-                    "forecast_high": 33,
-                    "prices": {
-                        "28°C": "3",
-                        "29°C": "8",
-                        "30°C": "15",
-                        "31°C": "25",
-                        "32°C": "30",
-                        "33°C": "15",
-                        "34°C": "4"
-                    },
-                    "highlight": "32°C",
-                    "prediction": "预报33°C，32°C概率最高"
+                    "current_temp": None,
+                    "forecast_high": None,
+                    "prices": {},
+                    "prediction": "等待数据..."
                 }
             }
         },
-        "alerts": [
-            {
-                "time": datetime.now().isoformat(),
-                "message": "深圳天气盘口：预报31°C但30°C概率仅35%，存在套利机会"
-            }
-        ]
+        "alerts": []
     }
 
-def save_data(data):
-    """保存数据"""
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def calculate_time_left():
+    """计算剩余时间"""
+    # 盘口结束时间: 2026-08-08 01:00 北京时间
+    end_time = datetime(2026, 8, 8, 1, 0, 0)
+    now = datetime.now()
+    
+    if now >= end_time:
+        return "已结束"
+    
+    delta = end_time - now
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    
+    if days > 0:
+        return f"约{days}天{hours}小时"
+    elif hours > 0:
+        return f"约{hours}小时{minutes}分钟"
+    else:
+        return f"约{minutes}分钟"
+
+def generate_musk_prediction(tweets, prices):
+    """生成马斯克盘口预测"""
+    if not tweets or not prices:
+        return "等待数据..."
+    
+    # 计算所需速度（假设剩余4天）
+    days_left = 4
+    target_200 = 200 - tweets
+    daily_needed = target_200 / days_left if days_left > 0 else 0
+    
+    # 找出最高概率档位
+    max_prob = 0
+    max_range = ""
+    for range_val, prob_str in prices.items():
+        try:
+            prob = float(prob_str)
+            if prob > max_prob:
+                max_prob = prob
+                max_range = range_val
+        except:
+            pass
+    
+    if daily_needed <= 20:
+        return f"推文速度需{daily_needed:.0f}条/天，建议关注{max_range}区间"
+    elif daily_needed <= 25:
+        return f"推文速度需{daily_needed:.0f}条/天，建议关注{max_range}区间"
+    else:
+        return f"推文速度需{daily_needed:.0f}条/天，建议关注中低区间"
+
+def generate_weather_prediction(current_temp, prices):
+    """生成天气盘口预测"""
+    if not prices:
+        return "等待数据..."
+    
+    # 找出概率最高的温度
+    max_prob = 0
+    max_temp = ""
+    for temp, prob_str in prices.items():
+        try:
+            prob = float(prob_str)
+            if prob > max_prob:
+                max_prob = prob
+                max_temp = temp
+        except:
+            pass
+    
+    if max_prob < 40 and current_temp:
+        return f"⚠️ 套利机会！当前{current_temp}°C，{max_temp}概率仅{max_prob}%，建议关注"
+    
+    return f"市场预测{max_temp}，概率{max_prob}%"
+
+def check_changes(old_data, new_data):
+    """检测变化并生成提醒"""
+    alerts = []
+    
+    # 检测马斯克推文变化
+    old_tweets = old_data.get('musk', {}).get('current', {}).get('tweets', 0)
+    new_tweets = new_data.get('musk', {}).get('current', {}).get('tweets', 0)
+    
+    if new_tweets > old_tweets and old_tweets > 0:
+        diff = new_tweets - old_tweets
+        alerts.append({
+            "type": "musk_tweet",
+            "time": datetime.now().isoformat(),
+            "message": f"🐦 马斯克发推了！新增{diff}条推文，当前共{new_tweets}条"
+        })
+    
+    # 检测温度变化
+    old_temp = old_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('current_temp')
+    new_temp = new_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('current_temp')
+    
+    if new_temp and old_temp and new_temp > old_temp:
+        diff = new_temp - old_temp
+        alerts.append({
+            "type": "temp_rise",
+            "time": datetime.now().isoformat(),
+            "message": f"🌡️ 温度上涨{diff}°C！当前{new_temp}°C"
+        })
+    
+    # 检测套利机会
+    if new_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('prices'):
+        prediction = new_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('prediction', '')
+        if '套利机会' in prediction:
+            alerts.append({
+                "type": "arbitrage",
+                "time": datetime.now().isoformat(),
+                "message": f"💰 {prediction}"
+            })
+    
+    return alerts
+
+def update_data():
+    """更新数据"""
+    global data
+    
+    old_data = load_data()
+    new_data = get_default_data()
+    
+    try:
+        # 抓取马斯克盘口
+        print(f"[{datetime.now().isoformat()}] 抓取马斯克盘口...")
+        musk_data = pm_scraper.fetch_musk_market()
+        
+        if musk_data:
+            new_data['musk']['current']['tweets'] = musk_data.get('tweets', 0)
+            new_data['musk']['current']['prices'] = musk_data.get('prices', {})
+            new_data['musk']['current']['time_left'] = calculate_time_left()
+            new_data['musk']['current']['prediction'] = generate_musk_prediction(
+                musk_data.get('tweets', 0),
+                musk_data.get('prices', {})
+            )
+        
+        # 抓取深圳温度
+        print(f"[{datetime.now().isoformat()}] 抓取深圳温度...")
+        temp_data = wu_scraper.fetch_shenzhen_temp()
+        
+        if temp_data and temp_data.get('temp_c'):
+            new_data['weather']['shenzhen']['today']['current_temp'] = temp_data.get('temp_c')
+        
+        # 抓取天气盘口
+        print(f"[{datetime.now().isoformat()}] 抓取天气盘口...")
+        weather_data = pm_scraper.fetch_weather_market()
+        
+        if weather_data:
+            new_data['weather']['shenzhen']['today']['prices'] = weather_data.get('prices', {})
+            new_data['weather']['shenzhen']['today']['prediction'] = generate_weather_prediction(
+                new_data['weather']['shenzhen']['today'].get('current_temp'),
+                weather_data.get('prices', {})
+            )
+        
+        # 检测变化
+        alerts = check_changes(old_data, new_data)
+        new_data['alerts'] = alerts + old_data.get('alerts', [])[:10]  # 保留最近10条
+        
+        new_data['last_update'] = datetime.now().isoformat()
+        
+        # 保存数据
+        save_data(new_data)
+        print(f"[{datetime.now().isoformat()}] 数据更新完成")
+        
+        if alerts:
+            print(f"[{datetime.now().isoformat()}] 发现{len(alerts)}条新提醒")
+        
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] 更新失败: {e}")
+
+def get_update_interval():
+    """动态计算更新间隔（A+B组合）"""
+    now = datetime.now()
+    
+    # 盘口结束时间
+    end_time = datetime(2026, 8, 8, 1, 0, 0)
+    
+    # 剩余时间
+    time_left = end_time - now
+    
+    # 关键时段（最后24小时）：每1分钟
+    if time_left < timedelta(hours=24):
+        return 60
+    
+    # 发推高峰时段（北京时间06:00-12:00）：每1分钟
+    if 6 <= now.hour <= 12:
+        return 60
+    
+    # 其他时段：每5分钟
+    return 300
+
+def background_monitor():
+    """后台监控线程"""
+    print(f"[{datetime.now().isoformat()}] 后台监控启动")
+    
+    # 首次更新
+    update_data()
+    
+    while True:
+        try:
+            # 动态获取更新间隔
+            interval = get_update_interval()
+            print(f"[{datetime.now().isoformat()}] 下次更新: {interval}秒后")
+            
+            time.sleep(interval)
+            update_data()
+            
+        except Exception as e:
+            print(f"[{datetime.now().isoformat()}] 监控错误: {e}")
+            time.sleep(60)
 
 # 初始化数据
 data = load_data()
-save_data(data)
 
 @app.route('/')
 def index():
@@ -179,27 +305,16 @@ def clear_alerts():
 
 @app.route('/api/reset', methods=['POST'])
 def reset_data():
-    """重置数据为新结构"""
+    """重置数据"""
     new_data = get_default_data()
     save_data(new_data)
     return jsonify({"status": "ok", "message": "数据已重置"})
 
-def background_monitor():
-    """后台监控线程"""
-    while True:
-        try:
-            # TODO: 添加实际监控逻辑
-            # 这里会在后续添加WU、Polymarket数据获取
-            
-            # 更新时间戳
-            d = load_data()
-            d['last_update'] = datetime.now().isoformat()
-            save_data(d)
-            
-        except Exception as e:
-            print(f"监控错误: {e}")
-        
-        time.sleep(60)  # 每分钟检查一次
+@app.route('/api/refresh', methods=['POST'])
+def manual_refresh():
+    """手动刷新"""
+    update_data()
+    return jsonify({"status": "ok", "message": "数据已刷新"})
 
 # 启动后台线程
 monitor_thread = threading.Thread(target=background_monitor, daemon=True)
@@ -210,4 +325,5 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     print("🚀 Polymarket 套利监控 Web App 启动")
     print(f"📱 访问: http://localhost:{port}")
+    print("📊 实时监控已启动")
     app.run(debug=False, host='0.0.0.0', port=port)

@@ -247,7 +247,24 @@ function showNotification(message) {
 }
 
 // 刷新按钮
-document.getElementById('refresh-btn').addEventListener('click', loadData);
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('refresh-btn');
+    btn.textContent = '⏳ 刷新中...';
+    btn.disabled = true;
+    
+    try {
+        await fetch('/api/refresh', { method: 'POST' });
+        await loadData();
+        btn.textContent = '✅ 已刷新';
+    } catch (e) {
+        btn.textContent = '❌ 刷新失败';
+    }
+    
+    setTimeout(() => {
+        btn.textContent = '🔄 刷新数据';
+        btn.disabled = false;
+    }, 2000);
+});
 
 // 清除提醒
 document.getElementById('clear-alerts').addEventListener('click', async () => {
