@@ -1,6 +1,6 @@
 """
-Polymarket 套利监控 Web App - 完整版
-支持本地监控脚本推送数据
+Polymarket 套利监控 Web App - 完整修复版
+支持实时更新所有数据
 """
 
 from flask import Flask, render_template, jsonify, request
@@ -17,30 +17,26 @@ DATA_FILE = 'data.json'
 # 默认数据
 data = {
     "musk": {
-        "tweets": 115,
-        "prices": {
-            "180-199": "31",
-            "200-219": "22",
-            "160-179": "20",
-            "220-239": "14",
-            "240-259": "8"
-        },
+        "tweets": 117,
+        "prices": {},
         "period": "7月31日-8月7日",
-        "remaining": "约2天17小时",
-        "prediction": "当前115条，日均23.0条",
+        "remaining": "约18小时",
+        "prediction": "当前117条，日均23.4条",
         "last_update": ""
     },
     "weather": {
         "current_temp": 25,
-        "humidity": 89,
-        "forecast_high": 31,
+        "humidity": 92,
+        "forecast_high": 34,
         "prices": {
-            "29°C": "20",
-            "30°C": "45",
-            "31°C": "30",
-            "32°C": "5"
+            "33°C": "44",
+            "32°C": "22",
+            "34°C": "22",
+            "31°C": "8",
+            "35°C": "6",
+            "30°C": "1"
         },
-        "prediction": "⚠️ 套利机会！预报31°C，但概率只有30%",
+        "prediction": "⚠️ 今日最高温预测：33°C概率最高(44%)",
         "last_update": ""
     },
     "tweets_list": [],
@@ -75,17 +71,19 @@ def get_data():
 
 @app.route('/api/manual-update', methods=['POST'])
 def manual_update():
-    """接收本地监控脚本推送的数据"""
+    """接收实时数据更新"""
     try:
         content = request.json
+        
+        now = datetime.now().strftime("%H:%M:%S")
         
         # 更新推文数
         if 'tweets' in content:
             data["musk"]["tweets"] = content["tweets"]
         
-        # 更新价格
-        if 'prices' in content:
-            data["musk"]["prices"] = content["prices"]
+        # 更新价格分布
+        if 'musk_prices' in content:
+            data["musk"]["prices"] = content["musk_prices"]
         
         # 更新剩余时间
         if 'remaining' in content:
@@ -102,12 +100,14 @@ def manual_update():
         if 'humidity' in content:
             data["weather"]["humidity"] = content["humidity"]
         
-        # 更新最新推文
-        if 'latest_tweets' in content:
-            data["tweets_list"] = content["latest_tweets"]
+        # 更新天气概率分布（关键修复）
+        if 'weather_prices' in content:
+            data["weather"]["prices"] = content["weather_prices"]
         
-        # 更新时间
-        now = datetime.now().strftime("%H:%M:%S")
+        if 'forecast_high' in content:
+            data["weather"]["forecast_high"] = content["forecast_high"]
+        
+        # 更新时间戳
         data["musk"]["last_update"] = now
         data["weather"]["last_update"] = now
         
@@ -116,7 +116,7 @@ def manual_update():
         
         return jsonify({
             "status": "success",
-            "message": f"数据已更新（推文数：{data['musk']['tweets']}，温度：{data['weather']['current_temp']}°C）",
+            "message": f"数据已更新（推文：{data['musk']['tweets']}，温度：{data['weather']['current_temp']}°C）",
             "tweets": data["musk"]["tweets"],
             "last_update": now
         })
