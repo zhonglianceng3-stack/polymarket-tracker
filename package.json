@@ -1,13 +1,17 @@
 {
   "name": "polymarket-tracker",
   "version": "1.0.0",
-  "description": "Polymarket 套利监控 Web App",
-  "main": "app.py",
+  "description": "Polymarket 套利监控 - Node.js版",
+  "main": "server.js",
   "scripts": {
-    "start": "python app.py"
+    "start": "node server.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/zhonglianceng3-stack/polymarket-tracker"
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.6.7",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
