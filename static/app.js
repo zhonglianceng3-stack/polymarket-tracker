@@ -1,9 +1,22 @@
 /**
- * Polymarket 套利监控 - 前端（完整版 + 实时倒计时）
+ * Polymarket 套利监控 - 前端（完整版 + 实时倒计 + 缓存控制）
  */
 
 // 盘口结束时间：2026年8月7日 24:00（北京时间）
 const END_TIME = new Date('2026-08-08T00:00:00+08:00').getTime();
+
+// 注册Service Worker
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js?v=' + Date.now())
+        .then((reg) => {
+            console.log('SW: 注册成功', reg.scope);
+            // 强制更新
+            if (reg.waiting) {
+                reg.waiting.postMessage('clearCache');
+            }
+        })
+        .catch((err) => console.log('SW: 注册失败', err));
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
@@ -18,9 +31,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadData() {
     try {
-        const response = await fetch('/api/data');
+        // 强制不缓存API请求
+        const response = await fetch('/api/data', {
+            method: 'GET',
+            headers: {
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            },
+            cache: 'no-store' // 写透传策略
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
-        updateUI(data);
+        
+        // 强制触发视图更新
+        requestAnimationFrame(() => {
+            updateUI(data);
+        });
         
         // 更新连接状态
         const statusEl = document.getElementById('connection-status');
@@ -28,6 +58,8 @@ async function loadData() {
             statusEl.textContent = '在线';
             statusEl.className = 'badge online';
         }
+        
+        console.log('数据更新:', new Date().toLocaleTimeString(), data.musk?.tweets);
     } catch (error) {
         console.error('加载失败:', error);
         
