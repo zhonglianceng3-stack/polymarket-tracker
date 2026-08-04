@@ -1,97 +1,120 @@
 /**
- * Polymarket 套利监控 - 前端逻辑（完整修复版）
+ * Polymarket 套利监控 - 前端（完整修复版）
  */
 
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
-    setInterval(loadData, 60000);
+    setInterval(loadData, 30000); // 每30秒更新
 });
 
 async function loadData() {
     try {
         const response = await fetch('/api/data');
         const data = await response.json();
-        
         updateUI(data);
     } catch (error) {
-        console.error('加载数据失败:', error);
+        console.error('加载失败:', error);
     }
 }
 
 function updateUI(data) {
     // 更新时间
-    document.getElementById('last-update').textContent = `更新时间: ${data.musk?.last_update || '--'}`;
+    const updateTime = data.musk?.last_update || data.weather?.last_update || '--';
+    const updateEl = document.getElementById('last-update');
+    if (updateEl) updateEl.textContent = `更新时间: ${updateTime}`;
     
     // 更新马斯克数据
     if (data.musk) {
-        document.getElementById('musk-current-tweets').textContent = data.musk.tweets || '--';
-        document.getElementById('musk-current-timeleft').textContent = data.musk.remaining || '--';
-        document.getElementById('musk-current-prediction').textContent = data.musk.prediction || '等待分析...';
+        // 推文数
+        setText('musk-current-tweets', data.musk.tweets || '--');
         
-        // 更新概率分布
+        // 剩余时间
+        setText('musk-current-timeleft', data.musk.remaining || '--');
+        
+        // 预测
+        setText('musk-current-prediction', data.musk.prediction || '等待数据...');
+        
+        // 概率分布
         renderPrices('musk-current-prices', data.musk.prices);
     }
     
     // 更新天气数据
     if (data.weather) {
-        document.getElementById('shenzhen-today-current').textContent = `${data.weather.current_temp || '--'}°C`;
-        document.getElementById('shenzhen-today-humidity').textContent = `${data.weather.humidity || '--'}%`;
-        document.getElementById('shenzhen-today-prediction').textContent = data.weather.prediction || '等待分析...';
+        // 温度（天气盘口）
+        setText('shenzhen-today-current', `${data.weather.current_temp || '--'}°C`);
         
-        // 更新天气概率分布
+        // 湿度（天气盘口）
+        setText('shenzhen-today-humidity', `${data.weather.humidity || '--'}%`);
+        
+        // 预测
+        setText('shenzhen-today-prediction', data.weather.prediction || '等待数据...');
+        
+        // 天气概率分布
         renderPrices('shenzhen-today-prices', data.weather.prices);
+        
+        // WU实时温度（右上角卡片）
+        setText('wu-temp-value', data.weather.current_temp || '--');
+        setText('wu-humidity', `${data.weather.humidity || '--'}%`);
+        setText('wu-update-time', data.weather.last_update || '--');
     }
     
-    // 更新提醒
-    if (data.alerts && data.alerts.length > 0) {
-        const alertsList = document.getElementById('alerts-list');
-        if (alertsList) {
-            alertsList.innerHTML = data.alerts.map(alert => `
-                <div class="alert-item">
-                    <div class="alert-time">${alert.time || ''}</div>
-                    <div class="alert-message">${alert.message}</div>
+    // 更新最新推文
+    const tweetsListEl = document.getElementById('latest-tweets-list');
+    if (tweetsListEl) {
+        if (data.tweets_list && data.tweets_list.length > 0) {
+            tweetsListEl.innerHTML = data.tweets_list.map(t => `
+                <div class="tweet-item">
+                    <div class="tweet-time">${t.time || '刚刚'}</div>
+                    <div class="tweet-text">${t.text || ''}</div>
                 </div>
             `).join('');
+        } else {
+            tweetsListEl.innerHTML = '<div class="no-data">暂无最新推文数据</div>';
         }
     }
+}
+
+function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
 }
 
 function renderPrices(elementId, prices) {
     const container = document.getElementById(elementId);
     if (!container || !prices) return;
     
-    container.innerHTML = Object.entries(prices)
-        .sort((a, b) => {
-            const aVal = parseInt(a[0].split('-')[0]) || parseInt(a[0]);
-            const bVal = parseInt(b[0].split('-')[0]) || parseInt(b[0]);
-            return aVal - bVal;
-        })
-        .map(([range, prob]) => `
-            <div class="price-item">
-                <div class="price-range">${range}</div>
-                <div class="price-prob">${prob}%</div>
-            </div>
-        `).join('');
+    const entries = Object.entries(prices);
+    
+    // 排序
+    entries.sort((a, b) => {
+        const aVal = parseInt(a[0].split('-')[0]) || parseInt(a[0]);
+        const bVal = parseInt(b[0].split('-')[0]) || parseInt(b[0]);
+        return aVal - bVal;
+    });
+    
+    // 渲染
+    container.innerHTML = entries.map(([range, prob]) => `
+        <div class="price-item">
+            <div class="price-range">${range}</div>
+            <div class="price-prob">${prob}%</div>
+        </div>
+    `).join('');
 }
 
 async function refreshData() {
+    const btn = event.target;
+    btn.textContent = '刷新中...';
+    btn.disabled = true;
+    
     try {
-        const btn = document.querySelector('button[onclick="refreshData()"]');
-        if (btn) btn.textContent = '刷新中...';
-        
-        const response = await fetch('/api/refresh', { method: 'POST' });
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-            await loadData();
-            alert('数据已刷新');
-        } else {
-            alert('刷新失败: ' + result.message);
-        }
-        
-        if (btn) btn.textContent = '🔄 刷新数据';
+        const response = await fetch('/api/data');
+        const data = await response.json();
+        updateUI(data);
+        btn.textContent = '🔄 刷新数据';
+        btn.disabled = false;
     } catch (error) {
         console.error('刷新失败:', error);
-        alert('刷新失败');
+        btn.textContent = '🔄 刷新数据';
+        btn.disabled = false;
     }
 }
