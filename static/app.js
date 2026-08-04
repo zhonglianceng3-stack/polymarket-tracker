@@ -1,5 +1,5 @@
 /**
- * Polymarket 套利监控 - 前端逻辑
+ * Polymarket 套利监控 - 前端逻辑（匹配版）
  */
 
 let notifyEnabled = false;
@@ -7,9 +7,11 @@ let currentData = {};
 
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
-    setupNotifications();
-    setupTabs();
-    setInterval(loadData, 60000);
+    setInterval(loadData, 60000);  // 每分钟更新
+    
+    // 绑定按钮事件
+    document.getElementById('refresh-btn')?.addEventListener('click', refreshData);
+    document.getElementById('clear-alerts')?.addEventListener('click', clearAlerts);
 });
 
 async function loadData() {
@@ -27,262 +29,139 @@ async function loadData() {
 }
 
 function updateUI(data) {
-    document.getElementById('last-update').textContent = 
-        `更新时间: ${formatTime(data.last_update)}`;
+    // 更新时间
+    const updateTime = data.musk?.last_update || data.weather?.last_update || '--';
+    document.getElementById('last-update').textContent = `更新时间: ${updateTime}`;
     
-    // 更新实时信息板块
-    updateRealtimeSection(data.realtime);
-    
-    // 更新馬斯克盘口
+    // 更新马斯克数据（使用正确的元素ID）
     if (data.musk) {
-        updateMuskMarket('current', data.musk.current);
-        updateMuskMarket('next', data.musk.next);
+        document.getElementById('musk-current-tweets').textContent = data.musk.tweets || '--';
+        document.getElementById('musk-current-timeleft').textContent = data.musk.remaining || '--';
+        document.getElementById('musk-current-prediction').textContent = data.musk.prediction || '等待分析...';
+        
+        // 更新概率分布
+        renderPriceDistribution(data.musk.prices, 'musk-current-prices');
     }
     
-    // 更新天气盘口
+    // 更新天气数据（使用正确的元素ID）
     if (data.weather) {
-        updateWeatherMarket('shenzhen', 'today', data.weather.shenzhen?.today);
+        document.getElementById('wu-temp-value').textContent = data.weather.current_temp || '--';
+        document.getElementById('wu-humidity').textContent = `${data.weather.humidity || '--'}%`;
+        document.getElementById('wu-update-time').textContent = data.weather.last_update || '--';
+        
+        // 更新天气预测
+        const weatherPrediction = document.getElementById('weather-today-prediction');
+        if (weatherPrediction) {
+            weatherPrediction.textContent = data.weather.prediction || '等待分析...';
+        }
+        
+        // 更新天气概率分布
+        renderWeatherDistribution(data.weather.prices, 'weather-today-prices');
     }
     
-    // 提醒
+    // 更新提醒
     if (data.alerts && data.alerts.length > 0) {
         renderAlerts(data.alerts);
+        document.getElementById('alerts-section')?.classList.remove('hidden');
     }
 }
 
-// 更新实时信息板块
-function updateRealtimeSection(realtime) {
-    if (!realtime) return;
+function renderPriceDistribution(prices, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container || !prices) return;
     
-    // 更新马斯克最新推文
-    const tweetsEl = document.getElementById('musk-tweets-realtime');
-    if (realtime.musk_tweets && realtime.musk_tweets.length > 0) {
-        tweetsEl.innerHTML = '';
-        realtime.musk_tweets.forEach(tweet => {
-            const item = document.createElement('div');
-            item.className = 'tweet-item';
-            item.innerHTML = `
-                <div class="time">${tweet.time || '刚刚'}</div>
-                <div class="text">${tweet.text || '推文内容加载中...'}</div>
-                <a href="${tweet.link || '#'}" class="link" target="_blank">查看原推 →</a>
-            `;
-            tweetsEl.appendChild(item);
-        });
-    } else {
-        tweetsEl.innerHTML = '<div class="loading">暂无最新推文</div>';
-    }
-    
-    // 更新WU实时温度
-    const wuTemp = realtime.wu_temp;
-    if (wuTemp) {
-        const tempValue = document.getElementById('wu-temp-value');
-        const humidity = document.getElementById('wu-humidity');
-        const updateTime = document.getElementById('wu-update-time');
-        
-        if (wuTemp.temp_c) {
-            tempValue.textContent = wuTemp.temp_c;
-        }
-        if (wuTemp.humidity) {
-            humidity.textContent = wuTemp.humidity + '%';
-        }
-        if (wuTemp.update_time) {
-            updateTime.textContent = wuTemp.update_time;
-        }
-    }
-}
-
-function updateMuskMarket(period, marketData) {
-    if (!marketData) return;
-    
-    const prefix = `musk-${period}`;
-    
-    const nameEl = document.getElementById(`${prefix}-name`);
-    const tweetsEl = document.getElementById(`${prefix}-tweets`);
-    const timeleftEl = document.getElementById(`${prefix}-timeleft`);
-    const predictionEl = document.getElementById(`${prefix}-prediction`);
-    const pricesEl = document.getElementById(`${prefix}-prices`);
-    
-    if (nameEl) nameEl.textContent = marketData.name || '--';
-    if (tweetsEl) tweetsEl.textContent = marketData.tweets || '--';
-    if (timeleftEl) timeleftEl.textContent = marketData.time_left || '--';
-    if (predictionEl) predictionEl.textContent = marketData.prediction || '等待分析...';
-    
-    if (marketData.prices && pricesEl) {
-        renderPrices(pricesEl, marketData.prices, marketData.highlight);
-    }
-}
-
-function updateWeatherMarket(city, date, marketData) {
-    if (!marketData) return;
-    
-    const prefix = `${city}-${date}`;
-    
-    const currentEl = document.getElementById(`${prefix}-current`);
-    const humidityEl = document.getElementById(`${prefix}-humidity`);
-    const predictionEl = document.getElementById(`${prefix}-prediction`);
-    const pricesEl = document.getElementById(`${prefix}-prices`);
-    
-    if (currentEl) currentEl.textContent = marketData.current_temp ? `${marketData.current_temp}°C` : '--°C';
-    if (humidityEl) humidityEl.textContent = marketData.humidity ? `${marketData.humidity}%` : '--%';
-    if (predictionEl) predictionEl.textContent = marketData.prediction || '等待分析...';
-    
-    if (marketData.prices && pricesEl) {
-        renderPrices(pricesEl, marketData.prices, marketData.highlight);
-    }
-}
-
-function renderPrices(container, prices, highlight) {
     container.innerHTML = '';
     
-    const sorted = Object.entries(prices).sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
+    const sorted = Object.entries(prices).sort((a, b) => {
+        const aVal = parseInt(a[0].split('-')[0]) || parseInt(a[0]);
+        const bVal = parseInt(b[0].split('-')[0]) || parseInt(b[0]);
+        return aVal - bVal;
+    });
     
     sorted.forEach(([range, prob]) => {
         const item = document.createElement('div');
-        const probNum = parseFloat(prob);
-        
-        let className = 'price-item';
-        if (highlight && range === highlight) {
-            className += ' highlight';
-        } else if (probNum < 5) {
-            className += ' low';
-        }
-        
-        item.className = className;
+        item.className = 'price-item';
         item.innerHTML = `
-            <div class="range">${range}</div>
-            <div class="prob">${prob}%</div>
+            <div class="price-range">${range}</div>
+            <div class="price-prob">${prob}%</div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function renderWeatherDistribution(prices, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container || !prices) return;
+    
+    container.innerHTML = '';
+    
+    Object.entries(prices).forEach(([temp, prob]) => {
+        const item = document.createElement('div');
+        item.className = 'price-item';
+        item.innerHTML = `
+            <div class="price-range">${temp}</div>
+            <div class="price-prob">${prob}%</div>
         `;
         container.appendChild(item);
     });
 }
 
 function renderAlerts(alerts) {
-    const section = document.getElementById('alerts-section');
-    const list = document.getElementById('alerts-list');
+    const container = document.getElementById('alerts-list');
+    if (!container) return;
     
-    if (alerts.length > 0) {
-        section.classList.remove('hidden');
-        list.innerHTML = '';
-        
-        alerts.forEach(alert => {
-            const item = document.createElement('div');
-            item.className = 'alert-item';
-            item.innerHTML = `
-                <div class="time">${formatTime(alert.time)}</div>
-                <div class="message">${alert.message}</div>
-            `;
-            list.appendChild(item);
-            
-            if (notifyEnabled) {
-                showNotification(alert.message);
-            }
-        });
-    } else {
-        section.classList.add('hidden');
-    }
-}
-
-function setupTabs() {
-    document.querySelectorAll('.tab[data-market]').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.tab[data-market]').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            
-            const market = tab.dataset.market;
-            document.querySelectorAll('.market-panel').forEach(p => p.classList.remove('active'));
-            document.getElementById(market)?.classList.add('active');
-        });
-    });
+    container.innerHTML = '';
     
-    document.querySelectorAll('.tab[data-city]').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.tab[data-city]').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-        });
-    });
-    
-    document.querySelectorAll('.date-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            const parent = tab.closest('.weather-panel') || document;
-            parent.querySelectorAll('.date-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            
-            const date = tab.dataset.date;
-            const activeCity = document.querySelector('.tab[data-city].active')?.dataset.city || 'shenzhen';
-            
-            document.querySelectorAll('.weather-panel').forEach(p => p.classList.remove('active'));
-            document.getElementById(`${activeCity}-${date}`)?.classList.add('active');
-        });
+    alerts.forEach(alert => {
+        const item = document.createElement('div');
+        item.className = 'alert-item';
+        const time = alert.time || '';
+        const message = alert.message || '';
+        item.innerHTML = `
+            <div class="alert-time">${time}</div>
+            <div class="alert-message">${message}</div>
+        `;
+        container.appendChild(item);
     });
 }
 
 function updateConnectionStatus(online) {
-    const badge = document.getElementById('connection-status');
-    badge.textContent = online ? '在线' : '离线';
-    badge.className = `badge ${online ? 'online' : 'offline'}`;
-}
-
-function formatTime(isoString) {
-    if (!isoString) return '--';
-    const date = new Date(isoString);
-    return date.toLocaleString('zh-CN', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-function setupNotifications() {
-    const btn = document.getElementById('notify-btn');
-    
-    btn.addEventListener('click', async () => {
-        if (!('Notification' in window)) {
-            alert('浏览器不支持通知');
-            return;
-        }
-        
-        const permission = await Notification.requestPermission();
-        
-        if (permission === 'granted') {
-            notifyEnabled = true;
-            btn.textContent = '✅ 通知已开启';
-            btn.disabled = true;
-        }
-    });
-}
-
-function showNotification(message) {
-    if (Notification.permission === 'granted') {
-        new Notification('Polymarket 套利机会', {
-            body: message,
-            icon: '/static/icon.png'
-        });
+    const statusElement = document.getElementById('connection-status');
+    if (statusElement) {
+        statusElement.textContent = online ? '在线' : '离线';
+        statusElement.className = online ? 'badge online' : 'badge offline';
     }
 }
 
-// 刷新按钮
-document.getElementById('refresh-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('refresh-btn');
-    btn.textContent = '⏳ 刷新中...';
-    btn.disabled = true;
-    
+// 手动刷新
+async function refreshData() {
     try {
-        await fetch('/api/refresh', { method: 'POST' });
-        await loadData();
-        btn.textContent = '✅ 已刷新';
-    } catch (e) {
-        btn.textContent = '❌ 刷新失败';
+        const response = await fetch('/api/refresh', { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            await loadData();
+            alert('数据已刷新');
+        } else {
+            alert('刷新失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('刷新失败:', error);
+        alert('刷新失败');
     }
-    
-    setTimeout(() => {
-        btn.textContent = '🔄 刷新数据';
-        btn.disabled = false;
-    }, 2000);
-});
+}
 
 // 清除提醒
-document.getElementById('clear-alerts').addEventListener('click', async () => {
-    await fetch('/api/alerts/clear', { method: 'POST' });
-    loadData();
-});
+async function clearAlerts() {
+    try {
+        const response = await fetch('/api/alerts/clear', { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            await loadData();
+            document.getElementById('alerts-section')?.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('清除失败:', error);
+    }
+}
