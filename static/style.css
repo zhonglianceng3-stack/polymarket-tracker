@@ -385,6 +385,73 @@ header h1 {
     color: #666;
 }
 
+/* 倒计时卡片 */
+.countdown-card {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border: 2px solid #10b981;
+    text-align: center;
+}
+
+.countdown-card h2 {
+    color: #10b981;
+    margin-bottom: 20px;
+}
+
+.countdown-display {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.countdown-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.countdown-value {
+    font-size: 3em;
+    font-weight: bold;
+    color: #10b981;
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px 20px;
+    border-radius: 10px;
+    min-width: 100px;
+}
+
+.countdown-label {
+    font-size: 0.8em;
+    color: #888;
+    margin-top: 5px;
+}
+
+.countdown-separator {
+    font-size: 2.5em;
+    color: #10b981;
+    font-weight: bold;
+}
+
+.countdown-info {
+    font-size: 0.9em;
+    color: #888;
+    margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+    .countdown-value {
+        font-size: 2em;
+        padding: 8px 15px;
+        min-width: 70px;
+    }
+    
+    .countdown-separator {
+        font-size: 1.8em;
+    }
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     body {
