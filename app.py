@@ -1,6 +1,6 @@
 """
-Polymarket 套利监控 Web App - 稳定版
-包含降级机制和错误处理
+Polymarket 套利监控 Web App - 完整版
+确保数据抓取正常工作
 """
 
 from flask import Flask, render_template, jsonify
@@ -11,6 +11,16 @@ from datetime import datetime
 import threading
 import time
 
+# 确保requests可用
+try:
+    import requests
+    import re
+    HAS_REQUESTS = True
+    print("✓ requests库已加载")
+except ImportError:
+    HAS_REQUESTS = False
+    print("✗ requests库未安装，将使用默认数据")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -20,7 +30,7 @@ DATA_FILE = 'data.json'
 # 默认数据（降级使用）
 DEFAULT_DATA = {
     "musk": {
-        "tweets": 106,
+        "tweets": 107,
         "prices": {
             "180-199": "31",
             "200-219": "22",
@@ -31,19 +41,27 @@ DEFAULT_DATA = {
         },
         "period": "7月31日-8月7日",
         "remaining": "约2天17小时",
+        "prediction": "当前107条，需日均33条达200条",
         "last_update": "手动更新"
     },
     "weather": {
-        "temp_c": 27,
-        "humidity": 88,
-        "market_prices": {},
+        "current_temp": 28,
+        "humidity": 85,
+        "forecast_high": 31,
+        "prices": {
+            "29°C": "20",
+            "30°C": "45",
+            "31°C": "30",
+            "32°C": "5"
+        },
+        "prediction": "⚠️ 套利机会！预报31°C但概率仅30%",
         "last_update": "手动更新"
     },
     "tweets_list": [],
     "alerts": [
         {
-            "time": "08/05 11:30",
-            "message": "当前推文数106条，距离盘口结束还有约2.7天"
+            "time": "08/05 04:05",
+            "message": "推文数107条，距离200条还需93条"
         }
     ],
     "status": "running"
@@ -58,7 +76,6 @@ def load_data():
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 loaded = json.load(f)
-                # 合并数据，保留有效的部分
                 if loaded.get("musk", {}).get("tweets", 0) > 0:
                     data = loaded
                     print("✓ 从缓存加载数据")
@@ -75,74 +92,55 @@ def save_data():
     except Exception as e:
         print(f"✗ 保存数据失败: {e}")
 
-def update_musk_data_safe():
-    """安全更新马斯克数据（带降级）"""
+def fetch_real_time_data():
+    """获取实时数据"""
+    if not HAS_REQUESTS:
+        print("  ✗ requests不可用，跳过抓取")
+        return
+    
     try:
-        print("  → 尝试更新马斯克数据...")
-        
-        # 尝试导入requests
-        try:
-            import requests
-        except:
-            print("  ✗ requests未安装，使用默认数据")
-            return
-        
-        # 尝试从XTracker获取数据
+        print("  → 抓取XTracker数据...")
         url = "https://xtracker.polymarket.com/user/elonmusk"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                import re
-                # 查找推文数
-                match = re.search(r'(\d{2,4})\s+posts', response.text)
-                if match:
-                    tweets = int(match.group(1))
-                    if 50 <= tweets <= 500:  # 合理范围
-                        data["musk"]["tweets"] = tweets
-                        print(f"  ✓ 推文数: {tweets}")
-        except Exception as e:
-            print(f"  ✗ XTracker请求失败: {e}")
-            # 使用缓存数据
+        response = requests.get(url, headers=headers, timeout=15)
         
-        # 更新时间
-        data["musk"]["last_update"] = datetime.now().strftime("%H:%M:%S")
-        
-        # 计算剩余时间
-        end_time = datetime(2026, 8, 8, 0, 0, 0)
-        now = datetime.now()
-        remaining = end_time - now
-        
-        if remaining.total_seconds() > 0:
-            days = remaining.days
-            hours = remaining.seconds // 3600
-            data["musk"]["remaining"] = f"约{days}天{hours}小时"
-        else:
-            data["musk"]["remaining"] = "已结束"
+        if response.status_code == 200:
+            text = response.text
             
-    except Exception as e:
-        print(f"✗ 更新马斯克数据失败: {e}")
-
-def update_weather_data_safe():
-    """安全更新天气数据（带降级）"""
-    try:
-        print("  → 尝试更新天气数据...")
+            # 查找推文数
+            match = re.search(r'(\d{2,4})\s+posts', text)
+            if match:
+                tweets = int(match.group(1))
+                if 80 <= tweets <= 500:
+                    data["musk"]["tweets"] = tweets
+                    print(f"  ✓ 推文数更新: {tweets}")
+            
+            # 更新时间
+            data["musk"]["last_update"] = datetime.now().strftime("%H:%M:%S")
+            
+            # 计算剩余时间
+            end_time = datetime(2026, 8, 8, 0, 0, 0)
+            now = datetime.now()
+            remaining = end_time - now
+            
+            if remaining.total_seconds() > 0:
+                days = remaining.days
+                hours = remaining.seconds // 3600
+                data["musk"]["remaining"] = f"约{days}天{hours}小时"
+            else:
+                data["musk"]["remaining"] = "已结束"
         
-        # 更新时间
-        data["weather"]["last_update"] = datetime.now().strftime("%H:%M:%S")
-        
     except Exception as e:
-        print(f"✗ 更新天气数据失败: {e}")
+        print(f"  ✗ 抓取失败: {e}")
 
 def update_all_data():
     """更新所有数据"""
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 🔄 更新数据...")
     
-    update_musk_data_safe()
-    update_weather_data_safe()
+    fetch_real_time_data()
     save_data()
     
     print(f"[{datetime.now().strftime('%H:%M:%S')}] ✓ 数据更新完成\n")
@@ -209,7 +207,11 @@ def clear_alerts():
 @app.route('/health')
 def health():
     """健康检查"""
-    return jsonify({"status": "healthy", "time": datetime.now().isoformat()})
+    return jsonify({
+        "status": "healthy", 
+        "time": datetime.now().isoformat(),
+        "requests": HAS_REQUESTS
+    })
 
 if __name__ == '__main__':
     # 加载已有数据
