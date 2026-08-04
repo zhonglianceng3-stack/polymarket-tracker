@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Polymarket 套利监控 Web App - 增强版
-支持实时数据更新和变化推送
+Polymarket 套利监控 Web App - 完整版
+支持实时数据更新、变化推送、实时信息板块
 """
 
 from flask import Flask, render_template, jsonify
@@ -14,17 +14,17 @@ import sys
 
 # 添加monitors目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from monitors.scrapers import PolymarketScraper, WundergroundScraper
+from monitors.scrapers import PolymarketScraper, WundergroundScraper, TwitterScraper
 
 app = Flask(__name__)
 
 # 数据存储
 DATA_FILE = "data.json"
-ALERTS_FILE = "alerts.json"
 
 # 初始化抓取器
 pm_scraper = PolymarketScraper()
 wu_scraper = WundergroundScraper()
+twitter_scraper = TwitterScraper()
 
 def load_data():
     """加载数据"""
@@ -66,9 +66,18 @@ def get_default_data():
                 "today": {
                     "current_temp": None,
                     "forecast_high": None,
+                    "humidity": None,
                     "prices": {},
                     "prediction": "等待数据..."
                 }
+            }
+        },
+        "realtime": {
+            "musk_tweets": [],
+            "wu_temp": {
+                "temp_c": None,
+                "humidity": None,
+                "update_time": None
             }
         },
         "alerts": []
@@ -76,7 +85,6 @@ def get_default_data():
 
 def calculate_time_left():
     """计算剩余时间"""
-    # 盘口结束时间: 2026-08-08 01:00 北京时间
     end_time = datetime(2026, 8, 8, 1, 0, 0)
     now = datetime.now()
     
@@ -100,12 +108,10 @@ def generate_musk_prediction(tweets, prices):
     if not tweets or not prices:
         return "等待数据..."
     
-    # 计算所需速度（假设剩余4天）
     days_left = 4
     target_200 = 200 - tweets
     daily_needed = target_200 / days_left if days_left > 0 else 0
     
-    # 找出最高概率档位
     max_prob = 0
     max_range = ""
     for range_val, prob_str in prices.items():
@@ -129,7 +135,6 @@ def generate_weather_prediction(current_temp, prices):
     if not prices:
         return "等待数据..."
     
-    # 找出概率最高的温度
     max_prob = 0
     max_temp = ""
     for temp, prob_str in prices.items():
@@ -174,16 +179,6 @@ def check_changes(old_data, new_data):
             "message": f"🌡️ 温度上涨{diff}°C！当前{new_temp}°C"
         })
     
-    # 检测套利机会
-    if new_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('prices'):
-        prediction = new_data.get('weather', {}).get('shenzhen', {}).get('today', {}).get('prediction', '')
-        if '套利机会' in prediction:
-            alerts.append({
-                "type": "arbitrage",
-                "time": datetime.now().isoformat(),
-                "message": f"💰 {prediction}"
-            })
-    
     return alerts
 
 def update_data():
@@ -194,8 +189,8 @@ def update_data():
     new_data = get_default_data()
     
     try:
-        # 抓取马斯克盘口
-        print(f"[{datetime.now().isoformat()}] 抓取马斯克盘口...")
+        # 1. 抓取马斯克盘口
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 抓取马斯克盘口...")
         musk_data = pm_scraper.fetch_musk_market()
         
         if musk_data:
@@ -207,15 +202,23 @@ def update_data():
                 musk_data.get('prices', {})
             )
         
-        # 抓取深圳温度
-        print(f"[{datetime.now().isoformat()}] 抓取深圳温度...")
+        # 2. 抓取深圳温度
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 抓取深圳温度...")
         temp_data = wu_scraper.fetch_shenzhen_temp()
         
-        if temp_data and temp_data.get('temp_c'):
+        if temp_data:
             new_data['weather']['shenzhen']['today']['current_temp'] = temp_data.get('temp_c')
+            new_data['weather']['shenzhen']['today']['humidity'] = temp_data.get('humidity')
+            
+            # 更新实时温度板块
+            new_data['realtime']['wu_temp'] = {
+                "temp_c": temp_data.get('temp_c'),
+                "humidity": temp_data.get('humidity'),
+                "update_time": datetime.now().strftime('%H:%M:%S')
+            }
         
-        # 抓取天气盘口
-        print(f"[{datetime.now().isoformat()}] 抓取天气盘口...")
+        # 3. 抓取天气盘口
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 抓取天气盘口...")
         weather_data = pm_scraper.fetch_weather_market()
         
         if weather_data:
@@ -225,30 +228,33 @@ def update_data():
                 weather_data.get('prices', {})
             )
         
+        # 4. 抓取马斯克最新推文（实时信息板块）
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 抓取最新推文...")
+        tweets_data = twitter_scraper.fetch_latest_tweets()
+        
+        if tweets_data:
+            new_data['realtime']['musk_tweets'] = tweets_data.get('tweets', [])
+        
         # 检测变化
         alerts = check_changes(old_data, new_data)
-        new_data['alerts'] = alerts + old_data.get('alerts', [])[:10]  # 保留最近10条
+        new_data['alerts'] = alerts + old_data.get('alerts', [])[:10]
         
         new_data['last_update'] = datetime.now().isoformat()
         
         # 保存数据
         save_data(new_data)
-        print(f"[{datetime.now().isoformat()}] 数据更新完成")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ 数据更新完成")
         
         if alerts:
-            print(f"[{datetime.now().isoformat()}] 发现{len(alerts)}条新提醒")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔔 发现{len(alerts)}条新提醒")
         
     except Exception as e:
-        print(f"[{datetime.now().isoformat()}] 更新失败: {e}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ 更新失败: {e}")
 
 def get_update_interval():
     """动态计算更新间隔（A+B组合）"""
     now = datetime.now()
-    
-    # 盘口结束时间
     end_time = datetime(2026, 8, 8, 1, 0, 0)
-    
-    # 剩余时间
     time_left = end_time - now
     
     # 关键时段（最后24小时）：每1分钟
@@ -264,22 +270,21 @@ def get_update_interval():
 
 def background_monitor():
     """后台监控线程"""
-    print(f"[{datetime.now().isoformat()}] 后台监控启动")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 后台监控启动")
     
     # 首次更新
     update_data()
     
     while True:
         try:
-            # 动态获取更新间隔
             interval = get_update_interval()
-            print(f"[{datetime.now().isoformat()}] 下次更新: {interval}秒后")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ 下次更新: {interval}秒后")
             
             time.sleep(interval)
             update_data()
             
         except Exception as e:
-            print(f"[{datetime.now().isoformat()}] 监控错误: {e}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ 监控错误: {e}")
             time.sleep(60)
 
 # 初始化数据
@@ -323,7 +328,11 @@ monitor_thread.start()
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5001))
+    print("=" * 50)
     print("🚀 Polymarket 套利监控 Web App 启动")
     print(f"📱 访问: http://localhost:{port}")
     print("📊 实时监控已启动")
+    print("🐦 马斯克推文监控: 启用")
+    print("🌡️ WU温度监控: 启用")
+    print("=" * 50)
     app.run(debug=False, host='0.0.0.0', port=port)

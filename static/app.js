@@ -2,19 +2,16 @@
  * Polymarket 套利监控 - 前端逻辑
  */
 
-// 状态
 let notifyEnabled = false;
 let currentData = {};
 
-// 初始化
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
     setupNotifications();
     setupTabs();
-    setInterval(loadData, 60000); // 每分钟刷新
+    setInterval(loadData, 60000);
 });
 
-// 加载数据
 async function loadData() {
     try {
         const response = await fetch('/api/data');
@@ -29,11 +26,12 @@ async function loadData() {
     }
 }
 
-// 更新UI
 function updateUI(data) {
-    // 更新时间
     document.getElementById('last-update').textContent = 
         `更新时间: ${formatTime(data.last_update)}`;
+    
+    // 更新实时信息板块
+    updateRealtimeSection(data.realtime);
     
     // 更新馬斯克盘口
     if (data.musk) {
@@ -44,9 +42,6 @@ function updateUI(data) {
     // 更新天气盘口
     if (data.weather) {
         updateWeatherMarket('shenzhen', 'today', data.weather.shenzhen?.today);
-        updateWeatherMarket('shenzhen', 'tomorrow', data.weather.shenzhen?.tomorrow);
-        updateWeatherMarket('beijing', 'today', data.weather.beijing?.today);
-        updateWeatherMarket('shanghai', 'today', data.weather.shanghai?.today);
     }
     
     // 提醒
@@ -55,7 +50,47 @@ function updateUI(data) {
     }
 }
 
-// 更新馬斯克盘口
+// 更新实时信息板块
+function updateRealtimeSection(realtime) {
+    if (!realtime) return;
+    
+    // 更新马斯克最新推文
+    const tweetsEl = document.getElementById('musk-tweets-realtime');
+    if (realtime.musk_tweets && realtime.musk_tweets.length > 0) {
+        tweetsEl.innerHTML = '';
+        realtime.musk_tweets.forEach(tweet => {
+            const item = document.createElement('div');
+            item.className = 'tweet-item';
+            item.innerHTML = `
+                <div class="time">${tweet.time || '刚刚'}</div>
+                <div class="text">${tweet.text || '推文内容加载中...'}</div>
+                <a href="${tweet.link || '#'}" class="link" target="_blank">查看原推 →</a>
+            `;
+            tweetsEl.appendChild(item);
+        });
+    } else {
+        tweetsEl.innerHTML = '<div class="loading">暂无最新推文</div>';
+    }
+    
+    // 更新WU实时温度
+    const wuTemp = realtime.wu_temp;
+    if (wuTemp) {
+        const tempValue = document.getElementById('wu-temp-value');
+        const humidity = document.getElementById('wu-humidity');
+        const updateTime = document.getElementById('wu-update-time');
+        
+        if (wuTemp.temp_c) {
+            tempValue.textContent = wuTemp.temp_c;
+        }
+        if (wuTemp.humidity) {
+            humidity.textContent = wuTemp.humidity + '%';
+        }
+        if (wuTemp.update_time) {
+            updateTime.textContent = wuTemp.update_time;
+        }
+    }
+}
+
 function updateMuskMarket(period, marketData) {
     if (!marketData) return;
     
@@ -77,19 +112,18 @@ function updateMuskMarket(period, marketData) {
     }
 }
 
-// 更新天气盘口
 function updateWeatherMarket(city, date, marketData) {
     if (!marketData) return;
     
     const prefix = `${city}-${date}`;
     
     const currentEl = document.getElementById(`${prefix}-current`);
-    const forecastEl = document.getElementById(`${prefix}-forecast`);
+    const humidityEl = document.getElementById(`${prefix}-humidity`);
     const predictionEl = document.getElementById(`${prefix}-prediction`);
     const pricesEl = document.getElementById(`${prefix}-prices`);
     
     if (currentEl) currentEl.textContent = marketData.current_temp ? `${marketData.current_temp}°C` : '--°C';
-    if (forecastEl) forecastEl.textContent = marketData.forecast_high ? `${marketData.forecast_high}°C` : '--°C';
+    if (humidityEl) humidityEl.textContent = marketData.humidity ? `${marketData.humidity}%` : '--%';
     if (predictionEl) predictionEl.textContent = marketData.prediction || '等待分析...';
     
     if (marketData.prices && pricesEl) {
@@ -97,11 +131,9 @@ function updateWeatherMarket(city, date, marketData) {
     }
 }
 
-// 渲染价格
 function renderPrices(container, prices, highlight) {
     container.innerHTML = '';
     
-    // 按概率排序
     const sorted = Object.entries(prices).sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
     
     sorted.forEach(([range, prob]) => {
@@ -124,7 +156,6 @@ function renderPrices(container, prices, highlight) {
     });
 }
 
-// 渲染提醒
 function renderAlerts(alerts) {
     const section = document.getElementById('alerts-section');
     const list = document.getElementById('alerts-list');
@@ -142,7 +173,6 @@ function renderAlerts(alerts) {
             `;
             list.appendChild(item);
             
-            // 浏览器通知
             if (notifyEnabled) {
                 showNotification(alert.message);
             }
@@ -152,9 +182,7 @@ function renderAlerts(alerts) {
     }
 }
 
-// 设置标签切换
 function setupTabs() {
-    // 馬斯克盘口标签
     document.querySelectorAll('.tab[data-market]').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab[data-market]').forEach(t => t.classList.remove('active'));
@@ -166,22 +194,13 @@ function setupTabs() {
         });
     });
     
-    // 城市标签
     document.querySelectorAll('.tab[data-city]').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab[data-city]').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            
-            const city = tab.dataset.city;
-            document.querySelectorAll('.weather-panel').forEach(p => {
-                if (p.id.startsWith(city)) {
-                    // 显示该城市的面板
-                }
-            });
         });
     });
     
-    // 日期标签
     document.querySelectorAll('.date-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             const parent = tab.closest('.weather-panel') || document;
@@ -197,14 +216,12 @@ function setupTabs() {
     });
 }
 
-// 更新连接状态
 function updateConnectionStatus(online) {
     const badge = document.getElementById('connection-status');
     badge.textContent = online ? '在线' : '离线';
     badge.className = `badge ${online ? 'online' : 'offline'}`;
 }
 
-// 格式化时间
 function formatTime(isoString) {
     if (!isoString) return '--';
     const date = new Date(isoString);
@@ -216,7 +233,6 @@ function formatTime(isoString) {
     });
 }
 
-// 通知设置
 function setupNotifications() {
     const btn = document.getElementById('notify-btn');
     
@@ -236,7 +252,6 @@ function setupNotifications() {
     });
 }
 
-// 显示通知
 function showNotification(message) {
     if (Notification.permission === 'granted') {
         new Notification('Polymarket 套利机会', {
