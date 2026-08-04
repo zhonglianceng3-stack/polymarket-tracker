@@ -24,53 +24,126 @@
             <button id="clear-alerts" class="btn-secondary">清除提醒</button>
         </section>
 
-        <!-- 两栏布局 -->
-        <div class="grid">
-            <!-- 马斯克盘口 -->
-            <section class="card">
-                <h2>🐦 马斯克推文盘口</h2>
-                <div class="info-row">
-                    <span class="label">当前推文数:</span>
-                    <span id="musk-tweets" class="value big">--</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">预测建议:</span>
-                    <span id="musk-prediction" class="value">等待分析...</span>
-                </div>
-                <h3>价格分布</h3>
-                <div id="musk-prices" class="prices-grid">
-                    <div class="loading">加载中...</div>
-                </div>
-            </section>
-
-            <!-- 天气盘口 -->
-            <section class="card">
-                <h2>🌡️ 深圳天气盘口</h2>
-                <div class="info-row">
-                    <span class="label">当前温度:</span>
-                    <span id="weather-current" class="value big">--°C</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">预报最高温:</span>
-                    <span id="weather-forecast" class="value">--°C</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">预测建议:</span>
-                    <span id="weather-prediction" class="value">等待分析...</span>
-                </div>
-                <h3>价格分布</h3>
-                <div id="weather-prices" class="prices-grid">
-                    <div class="loading">加载中...</div>
-                </div>
-            </section>
-        </div>
-
         <!-- 操作区 -->
         <section class="card actions">
             <h2>⚙️ 操作</h2>
             <div class="button-group">
                 <button id="refresh-btn" class="btn-primary">🔄 刷新数据</button>
                 <button id="notify-btn" class="btn-secondary">🔔 开启通知</button>
+            </div>
+        </section>
+
+        <!-- 马斯克推文盘口 - 多个盘口 -->
+        <section class="card">
+            <h2>🐦 马斯克推文盘口</h2>
+            
+            <!-- 盘口选择标签 -->
+            <div class="tabs">
+                <button class="tab active" data-market="musk-current">当前盘口</button>
+                <button class="tab" data-market="musk-next">下期盘口</button>
+            </div>
+            
+            <div id="musk-markets">
+                <!-- 当前盘口 -->
+                <div id="musk-current" class="market-panel active">
+                    <div class="info-row">
+                        <span class="label">盘口名称:</span>
+                        <span id="musk-current-name" class="value">7月31日-8月7日</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">当前推文数:</span>
+                        <span id="musk-current-tweets" class="value big">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">剩余时间:</span>
+                        <span id="musk-current-timeleft" class="value">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">预测建议:</span>
+                        <span id="musk-current-prediction" class="value highlight">等待分析...</span>
+                    </div>
+                    <h3>概率分布（完整）</h3>
+                    <div id="musk-current-prices" class="prices-grid">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+                
+                <!-- 下期盘口 -->
+                <div id="musk-next" class="market-panel">
+                    <div class="info-row">
+                        <span class="label">盘口名称:</span>
+                        <span id="musk-next-name" class="value">8月7日-8月14日</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">当前推文数:</span>
+                        <span id="musk-next-tweets" class="value big">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">预测建议:</span>
+                        <span id="musk-next-prediction" class="value highlight">等待分析...</span>
+                    </div>
+                    <h3>概率分布（完整）</h3>
+                    <div id="musk-next-prices" class="prices-grid">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 天气盘口 - 多个城市多天 -->
+        <section class="card">
+            <h2>🌡️ 天气盘口</h2>
+            
+            <!-- 城市选择 -->
+            <div class="tabs">
+                <button class="tab active" data-city="shenzhen">深圳</button>
+                <button class="tab" data-city="beijing">北京</button>
+                <button class="tab" data-city="shanghai">上海</button>
+            </div>
+            
+            <!-- 日期选择 -->
+            <div class="date-tabs" id="weather-dates">
+                <button class="date-tab active" data-date="today">今天</button>
+                <button class="date-tab" data-date="tomorrow">明天</button>
+                <button class="date-tab" data-date="day3">后天</button>
+            </div>
+            
+            <div id="weather-markets">
+                <!-- 深圳今天 -->
+                <div id="shenzhen-today" class="weather-panel active">
+                    <div class="info-row">
+                        <span class="label">当前温度:</span>
+                        <span id="shenzhen-today-current" class="value big">--°C</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">预报最高温:</span>
+                        <span id="shenzhen-today-forecast" class="value">--°C</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">预测建议:</span>
+                        <span id="shenzhen-today-prediction" class="value highlight">等待分析...</span>
+                    </div>
+                    <h3>各温度概率分布</h3>
+                    <div id="shenzhen-today-prices" class="prices-grid full">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+                
+                <!-- 深圳明天 -->
+                <div id="shenzhen-tomorrow" class="weather-panel">
+                    <div class="info-row">
+                        <span class="label">预报最高温:</span>
+                        <span id="shenzhen-tomorrow-forecast" class="value big">--°C</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">预测建议:</span>
+                        <span id="shenzhen-tomorrow-prediction" class="value highlight">等待分析...</span>
+                    </div>
+                    <h3>各温度概率分布</h3>
+                    <div id="shenzhen-tomorrow-prices" class="prices-grid full">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
             </div>
         </section>
 

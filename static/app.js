@@ -4,11 +4,13 @@
 
 // 状态
 let notifyEnabled = false;
+let currentData = {};
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
     setupNotifications();
+    setupTabs();
     setInterval(loadData, 60000); // 每分钟刷新
 });
 
@@ -17,6 +19,7 @@ async function loadData() {
     try {
         const response = await fetch('/api/data');
         const data = await response.json();
+        currentData = data;
         
         updateUI(data);
         updateConnectionStatus(true);
@@ -30,32 +33,20 @@ async function loadData() {
 function updateUI(data) {
     // 更新时间
     document.getElementById('last-update').textContent = 
-        `更新时间: ${formatTime(data.musk.last_update)}`;
+        `更新时间: ${formatTime(data.last_update)}`;
     
-    // 马斯克盘口
+    // 更新馬斯克盘口
     if (data.musk) {
-        document.getElementById('musk-tweets').textContent = 
-            data.musk.tweets || '--';
-        document.getElementById('musk-prediction').textContent = 
-            data.musk.prediction || '等待分析...';
-        
-        if (data.musk.prices) {
-            renderPrices('musk-prices', data.musk.prices);
-        }
+        updateMuskMarket('current', data.musk.current);
+        updateMuskMarket('next', data.musk.next);
     }
     
-    // 天气盘口
+    // 更新天气盘口
     if (data.weather) {
-        document.getElementById('weather-current').textContent = 
-            data.weather.current_temp ? `${data.weather.current_temp}°C` : '--°C';
-        document.getElementById('weather-forecast').textContent = 
-            data.weather.forecast_high ? `${data.weather.forecast_high}°C` : '--°C';
-        document.getElementById('weather-prediction').textContent = 
-            data.weather.prediction || '等待分析...';
-        
-        if (data.weather.prices) {
-            renderPrices('weather-prices', data.weather.prices);
-        }
+        updateWeatherMarket('shenzhen', 'today', data.weather.shenzhen?.today);
+        updateWeatherMarket('shenzhen', 'tomorrow', data.weather.shenzhen?.tomorrow);
+        updateWeatherMarket('beijing', 'today', data.weather.beijing?.today);
+        updateWeatherMarket('shanghai', 'today', data.weather.shanghai?.today);
     }
     
     // 提醒
@@ -64,20 +55,73 @@ function updateUI(data) {
     }
 }
 
+// 更新馬斯克盘口
+function updateMuskMarket(period, marketData) {
+    if (!marketData) return;
+    
+    const prefix = `musk-${period}`;
+    
+    const nameEl = document.getElementById(`${prefix}-name`);
+    const tweetsEl = document.getElementById(`${prefix}-tweets`);
+    const timeleftEl = document.getElementById(`${prefix}-timeleft`);
+    const predictionEl = document.getElementById(`${prefix}-prediction`);
+    const pricesEl = document.getElementById(`${prefix}-prices`);
+    
+    if (nameEl) nameEl.textContent = marketData.name || '--';
+    if (tweetsEl) tweetsEl.textContent = marketData.tweets || '--';
+    if (timeleftEl) timeleftEl.textContent = marketData.time_left || '--';
+    if (predictionEl) predictionEl.textContent = marketData.prediction || '等待分析...';
+    
+    if (marketData.prices && pricesEl) {
+        renderPrices(pricesEl, marketData.prices, marketData.highlight);
+    }
+}
+
+// 更新天气盘口
+function updateWeatherMarket(city, date, marketData) {
+    if (!marketData) return;
+    
+    const prefix = `${city}-${date}`;
+    
+    const currentEl = document.getElementById(`${prefix}-current`);
+    const forecastEl = document.getElementById(`${prefix}-forecast`);
+    const predictionEl = document.getElementById(`${prefix}-prediction`);
+    const pricesEl = document.getElementById(`${prefix}-prices`);
+    
+    if (currentEl) currentEl.textContent = marketData.current_temp ? `${marketData.current_temp}°C` : '--°C';
+    if (forecastEl) forecastEl.textContent = marketData.forecast_high ? `${marketData.forecast_high}°C` : '--°C';
+    if (predictionEl) predictionEl.textContent = marketData.prediction || '等待分析...';
+    
+    if (marketData.prices && pricesEl) {
+        renderPrices(pricesEl, marketData.prices, marketData.highlight);
+    }
+}
+
 // 渲染价格
-function renderPrices(containerId, prices) {
-    const container = document.getElementById(containerId);
+function renderPrices(container, prices, highlight) {
     container.innerHTML = '';
     
-    for (const [range, prob] of Object.entries(prices)) {
+    // 按概率排序
+    const sorted = Object.entries(prices).sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
+    
+    sorted.forEach(([range, prob]) => {
         const item = document.createElement('div');
-        item.className = 'price-item';
+        const probNum = parseFloat(prob);
+        
+        let className = 'price-item';
+        if (highlight && range === highlight) {
+            className += ' highlight';
+        } else if (probNum < 5) {
+            className += ' low';
+        }
+        
+        item.className = className;
         item.innerHTML = `
             <div class="range">${range}</div>
             <div class="prob">${prob}%</div>
         `;
         container.appendChild(item);
-    }
+    });
 }
 
 // 渲染提醒
@@ -106,6 +150,51 @@ function renderAlerts(alerts) {
     } else {
         section.classList.add('hidden');
     }
+}
+
+// 设置标签切换
+function setupTabs() {
+    // 馬斯克盘口标签
+    document.querySelectorAll('.tab[data-market]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab[data-market]').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const market = tab.dataset.market;
+            document.querySelectorAll('.market-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(market)?.classList.add('active');
+        });
+    });
+    
+    // 城市标签
+    document.querySelectorAll('.tab[data-city]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab[data-city]').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const city = tab.dataset.city;
+            document.querySelectorAll('.weather-panel').forEach(p => {
+                if (p.id.startsWith(city)) {
+                    // 显示该城市的面板
+                }
+            });
+        });
+    });
+    
+    // 日期标签
+    document.querySelectorAll('.date-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const parent = tab.closest('.weather-panel') || document;
+            parent.querySelectorAll('.date-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const date = tab.dataset.date;
+            const activeCity = document.querySelector('.tab[data-city].active')?.dataset.city || 'shenzhen';
+            
+            document.querySelectorAll('.weather-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`${activeCity}-${date}`)?.classList.add('active');
+        });
+    });
 }
 
 // 更新连接状态
