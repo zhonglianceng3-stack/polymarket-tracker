@@ -8,8 +8,8 @@ const END_TIME = new Date('2026-08-08T00:00:00+08:00').getTime();
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
     
-    // 每30秒更新数据
-    setInterval(loadData, 30000);
+    // 每10秒更新数据（提高实时性）
+    setInterval(loadData, 10000);
     
     // 每秒更新倒计时
     setInterval(updateCountdown, 1000);
