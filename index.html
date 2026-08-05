@@ -2,25 +2,100 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- 强制禁止缓存 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <title>Polymarket 套利监控</title>
+    <link rel="stylesheet" href="/style.css?v=2026080512">
 </head>
 <body>
-    <h1>Polymarket 套利监控</h1>
-    <p>更新时间：<span id="time">加载中...</span></p>
-    <div id="content"></div>
+    <div class="container">
+        <h1>📊 Polymarket 套利监控</h1>
+        
+        <div class="status">
+            <span id="connection-status" class="badge offline">离线</span>
+            <span id="last-update">更新时间: 连接中...</span>
+            <span id="ws-status" class="badge">WebSocket: 断开</span>
+        </div>
 
-    <script>
-    // 前端每3秒主动拉取接口，不用手动刷新
-    function getData() {
-        fetch('/api/latest')
-            .then(res => res.json())
-            .then(info => {
-                document.getElementById('time').innerText = info.updateTime;
-                document.getElementById('content').innerText = JSON.stringify(info, null, 2)
-            })
-    }
-    getData();
-    setInterval(getData, 3000);
-    </script>
+        <!-- 倒计时 -->
+        <div class="countdown-card">
+            <h2>⏰ 盘口倒计时</h2>
+            <div class="countdown-display">
+                <div class="countdown-item">
+                    <span id="hours" class="countdown-value">--</span>
+                    <span class="countdown-label">小时</span>
+                </div>
+                <span class="countdown-separator">:</span>
+                <div class="countdown-item">
+                    <span id="minutes" class="countdown-value">--</span>
+                    <span class="countdown-label">分钟</span>
+                </div>
+                <span class="countdown-separator">:</span>
+                <div class="countdown-item">
+                    <span id="seconds" class="countdown-value">--</span>
+                    <span class="countdown-label">秒</span>
+                </div>
+            </div>
+            <div>距离盘口结束（8月7日 24:00）</div>
+        </div>
+
+        <!-- 实时信息 -->
+        <div class="realtime-grid">
+            <div class="card">
+                <h2>🌡️ WU实时温度</h2>
+                <div class="temp-display">
+                    <div class="temp-value"><span id="temp">--</span>°C</div>
+                    <div class="temp-info">
+                        <div><span class="label">湿度:</span> <span id="humidity">--</span>%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>🐦 馬斯克推文盘口</h2>
+                <div class="info-row">
+                    <span class="label">当前推文数:</span>
+                    <span id="tweets" class="value big">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">剩余时间:</span>
+                    <span id="remaining" class="value">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">预测:</span>
+                    <span id="prediction" class="value highlight">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 推文概率分布 -->
+        <div class="card">
+            <h2>📊 推文概率分布</h2>
+            <div id="musk-prices" class="prices-grid">加载中...</div>
+        </div>
+
+        <!-- 天气盘口 -->
+        <div class="card">
+            <h2>🌡️ 天气盘口（深圳）</h2>
+            <div class="info-row">
+                <span class="label">当前温度:</span>
+                <span id="weather-temp" class="value big">--°C</span>
+            </div>
+            <div class="info-row">
+                <span class="label">预测:</span>
+                <span id="weather-prediction" class="value">--</span>
+            </div>
+            <div id="weather-prices" class="prices-grid">加载中...</div>
+        </div>
+
+        <!-- 手动刷新按钮 -->
+        <button onclick="manualRefresh()" class="refresh-btn">🔄 手动刷新</button>
+    </div>
+
+    <script src="/app-ws.js?v=2026080512"></script>
 </body>
 </html>
